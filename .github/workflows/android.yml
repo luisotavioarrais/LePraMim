@@ -5,20 +5,38 @@ on:
   workflow_dispatch:
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
-      - run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Verify Android SDK
+        shell: bash
+        run: |
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          ls "$SDK/platforms"
+          ls "$SDK/build-tools"
+          if [[ ! -d "$SDK/platforms/android-35" || ! -d "$SDK/build-tools/35.0.0" ]]; then
+            MANAGER="$SDK/cmdline-tools/latest/bin/sdkmanager"
+            if [[ ! -x "$MANAGER" ]]; then
+              MANAGER="$(find "$SDK/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -n 1)"
+            fi
+            test -x "$MANAGER"
+            set +o pipefail
+            yes | "$MANAGER" --sdk_root="$SDK" --licenses
+            set -o pipefail
+            "$MANAGER" --sdk_root="$SDK" "platforms;android-35" "build-tools;35.0.0"
+          fi
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - run: gradle assembleDebug
+      - run: gradle assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
           name: LePraMim-APK
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
